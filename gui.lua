@@ -1,25 +1,17 @@
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
 local Window = Library.CreateLib("HILAROUS", "DarkTheme")
 
-local ModTab = Window:NewTab("Mods")
-local ModSection = ModTab:NewSection("Modifications")
+local VisualTab = Window:NewTab("Visual")
+local ServerTab = Window:NewTab("Server")
 
-local MovementsSection = ModTab:NewSection("Movements")
-local VisualSection = ModTab:NewSection("Visual")
-local ServerSection = ModTab:NewSection("Server")
+local VisualSection = VisualTab:NewSection("Visuals")
+local ServerSection = ServerTab:NewSection("Server")
 
 local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-
-local flying = false
-local speedPower = 16
-local jumpPower = 50
-
-local espActive = false
+local highlights = {}
 local tracersActive = false
 local boxEspActive = false
-local highlights = {}
+local selectedPlayer = nil
 
 local function showNotification(message)
     local notification = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -51,45 +43,8 @@ local function showNotification(message)
     notification:Destroy()
 end
 
-local function toggleFlying(state)
-    flying = state
-    if flying then
-        local bodyVelocity = Instance.new("BodyVelocity", character:WaitForChild("HumanoidRootPart"))
-        bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-
-        local bodyGyro = Instance.new("BodyGyro", character:WaitForChild("HumanoidRootPart"))
-        bodyGyro.MaxTorque = Vector3.new(4000, 4000, 4000)
-
-        while flying do
-            bodyVelocity.Velocity = Vector3.new(0, 50, 0)
-            wait(0.1)
-        end
-
-        bodyVelocity:Destroy()
-        bodyGyro:Destroy()
-    end
-end
-
-MovementsSection:NewButton("Augmenter la vitesse", "Augmenter la vitesse du joueur", function()
-    speedPower = speedPower + 10
-    humanoid.WalkSpeed = speedPower
-    showNotification("Vitesse augmentée à " .. speedPower)
-end)
-
-MovementsSection:NewButton("Augmenter le saut", "Augmenter la puissance du saut", function()
-    jumpPower = jumpPower + 10
-    humanoid.JumpPower = jumpPower
-    showNotification("Saut augmenté à " .. jumpPower)
-end)
-
-MovementsSection:NewToggle("Voler comme un héros", "Activer/Désactiver le vol", function(state)
-    toggleFlying(state)
-    showNotification(state and "Vol activé" or "Vol désactivé")
-end)
-
 VisualSection:NewToggle("Activer ESP", "Activer/Désactiver l'ESP", function(state)
-    espActive = state
-    if espActive then
+    if state then
         for _, v in pairs(game.Players:GetPlayers()) do
             if v ~= player then
                 local highlight = Instance.new("Highlight", game.CoreGui)
@@ -124,34 +79,8 @@ VisualSection:NewToggle("Activer ESP", "Activer/Désactiver l'ESP", function(sta
     end
 end)
 
-VisualSection:NewToggle("Activer Tracers", "Activer/Désactiver les tracers", function(state)
-    tracersActive = state
-    if tracersActive then
-        for _, v in pairs(game.Players:GetPlayers()) do
-            if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-                local line = Instance.new("LineHandleAdornment")
-                line.Adornee = v.Character.HumanoidRootPart
-                line.Length = (line.Adornee.Position - player.Character.HumanoidRootPart.Position).Magnitude
-                line.Color3 = Color3.new(0, 1, 0)
-                line.Parent = game.CoreGui
-                line.ZIndex = 5
-                line.AlwaysOnTop = true
-            end
-        end
-        showNotification("Tracers activés")
-    else
-        for _, line in pairs(game.CoreGui:GetChildren()) do
-            if line:IsA("LineHandleAdornment") then
-                line:Destroy()
-            end
-        end
-        showNotification("Tracers désactivés")
-    end
-end)
-
 VisualSection:NewToggle("Activer Box ESP", "Activer/Désactiver Box ESP", function(state)
-    boxEspActive = state
-    if boxEspActive then
+    if state then
         for _, v in pairs(game.Players:GetPlayers()) do
             if v ~= player then
                 local box = Instance.new("BoxHandleAdornment")
@@ -174,11 +103,72 @@ VisualSection:NewToggle("Activer Box ESP", "Activer/Désactiver Box ESP", functi
     end
 end)
 
-local selectedPlayer
+VisualSection:NewToggle("Activer Tracers", "Activer/Désactiver les tracers", function(state)
+    tracersActive = state
+    if tracersActive then
+        game:GetService("RunService").RenderStepped:Connect(function()
+            if tracersActive then
+                for _, v in pairs(game.Players:GetPlayers()) do
+                    if v ~= player and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                        local line = Instance.new("LineHandleAdornment")
+                        line.Adornee = player.Character.HumanoidRootPart
+                        line.Length = (v.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                        line.Color3 = Color3.new(0, 1, 0)
+                        line.Parent = game.CoreGui
+                        line.ZIndex = 5
+                        line.AlwaysOnTop = true
+                        line.CFrame = CFrame.new(player.Character.HumanoidRootPart.Position, v.Character.HumanoidRootPart.Position)
+                    end
+                end
+            end
+        end)
+        showNotification("Tracers activés")
+    else
+        for _, line in pairs(game.CoreGui:GetChildren()) do
+            if line:IsA("LineHandleAdornment") then
+                line:Destroy()
+            end
+        end
+        showNotification("Tracers désactivés")
+    end
+end)
 
-ServerSection:NewDropdown("Sélectionner un joueur", "Sélectionnez un joueur pour des actions", {}, function(playerName)
+ServerSection:NewButton("Mettre à jour la liste des joueurs", "Mettre à jour la liste pour voir les joueurs actuels", function()
+    local playerNames = {}
+    for _, v in pairs(game.Players:GetPlayers()) do
+        table.insert(playerNames, v.Name)
+    end
+    ServerSection:UpdateDropdown("Liste des joueurs", playerNames)
+    showNotification("Liste des joueurs mise à jour")
+end)
+
+ServerSection:NewTextbox("Nom du joueur à sélectionner", "Écrivez le nom du joueur", function(name)
+    selectedPlayer = game.Players:FindFirstChild(name)
+    if selectedPlayer then
+        showNotification("Joueur sélectionné : " .. selectedPlayer.Name)
+    else
+        showNotification("Joueur non trouvé")
+    end
+end)
+
+local function updatePlayerList()
+    local playerNames = {}
+    for _, v in pairs(game.Players:GetPlayers()) do
+        table.insert(playerNames, v.Name)
+    end
+    ServerSection:UpdateDropdown("Liste des joueurs", playerNames)
+end
+
+game.Players.PlayerAdded:Connect(updatePlayerList)
+game.Players.PlayerRemoving:Connect(updatePlayerList)
+
+ServerSection:NewDropdown("Liste des joueurs", "Sélectionnez un joueur pour des actions", {}, function(playerName)
     selectedPlayer = game.Players:FindFirstChild(playerName)
-    showNotification("Joueur sélectionné : " .. (selectedPlayer and selectedPlayer.Name or "Aucun"))
+    if selectedPlayer then
+        showNotification("Joueur sélectionné : " .. selectedPlayer.Name)
+    else
+        showNotification("Aucun joueur sélectionné.")
+    end
 end)
 
 ServerSection:NewButton("Kicker le joueur sélectionné", "Kicker le joueur sélectionné", function()
@@ -199,14 +189,4 @@ ServerSection:NewButton("Donner un code d'erreur au joueur sélectionné", "Donn
     end
 end)
 
-game.Players.PlayerAdded:Connect(function(newPlayer)
-    newPlayer.CharacterAdded:Connect(function()
-        if espActive then
-            local highlight = Instance.new("Highlight", game.CoreGui)
-            highlight.Adornee = newPlayer.Character
-            highlight.FillColor = Color3.new(1, 0, 0)
-            highlight.OutlineColor = Color3.new(0, 0, 0)
-            highlights[newPlayer.UserId] = highlight
-        end
-    end)
-end)
+updatePlayerList()
